@@ -5,7 +5,8 @@ $subject = array(
 	'id'	=> 'subject',
 	'value' => set_value('subject'),
 	'maxlength'	=> 64,
-	'size'	=> 30
+	'size'	=> 30,
+        'tabindex' => 5
 );
 
 $categories = array(
@@ -13,28 +14,33 @@ $categories = array(
 		'name' => 'category[]',
 		'id' => 'cat-discussions',
 		'value' => '1',
+                'tabindex' => 1
 	),
 	'projects' => array(
 		'name' => 'category[]',
 		'id' => 'cat-projects',
-		'value' => '2'
+		'value' => '2',
+                'tabindex' => 2
 	),
 	'advice' => array(
 		'name' => 'category[]',
 		'id' => 'cat-advice',
-		'value' => '3'
+		'value' => '3',
+                'tabindex' => 3
 	),
 	'meaningless' => array(
 		'name' => 'category[]',
 		'id' => 'cat-meaningless',
-		'value' => '4'
+		'value' => '4',
+                'tabindex' => 4
 	)
 );
 
 $content = array(
-	'name'	=> 'content',
-	'id'	=> 'thread-content-input',
-	'value' => set_value('content')
+  'tabindex' => 6,
+  'name'	=> 'content',
+  'id'	=> 'thread-content-input',
+  'value' => set_value('content')
 );
 
 ?>
@@ -49,6 +55,7 @@ $content = array(
 
   <form method="post" action="/newthread">
     <div class="inp">
+      <?php echo form_error('category[]'); ?>
       <?php echo form_label('Step 1: Pick a category'); ?>
       <div id="category-selector">
         <?php echo form_radio($categories['discussions']); ?>
@@ -62,10 +69,12 @@ $content = array(
       </div>
     </div>
     <div class="inp">
+      <?php echo form_error('subject'); ?>
       <?php echo form_label('Step 2: Write a thread title', $subject['id']); ?>
       <?php echo form_input($subject); ?>
     </div>
     <div class="inp">
+      <?php echo form_error('content'); ?>
       <?php echo form_label('Step 3: Type the content of your thread ', $content['id']); ?>
       <div id="pinkies">
         <a href="javascript:insertAtCaret('thread-content-input', '[:)]');">
@@ -119,11 +128,36 @@ $content = array(
           <li>&middot; <a href="javascript:insertAtCaret('thread-content-input', '<a href=%22%22></a>')">URL</a></li>
           <li>&middot; <a href="javascript:insertAtCaret('thread-content-input', '<img src=%22%22 />')">Image</a></li>
           <li>&middot; <a href="javascript:insertAtCaret('thread-content-input', '<spoiler></spoiler>')">Spoiler</a></li>
+          <li>&middot; <a href="javascript:insertAtCaret('thread-content-input', '<code></code>')">Code</a></li>
+          <li>&middot; <a href="javascript:insertAtCaret('thread-content-input', '<small>snigger</small>')">Snigger</a></li>
         </ul>
       </div>
       </div>
     </div>
-    <?php echo form_submit('submit', 'Post Thread'); ?>
+  <button type="submit" name="" tabindex="7">Post Thread</button>
+  <button type="button" id="preview-button"  tabindex="8">Preview</button>
+
   </form>
+
+<div id="comment-preview" class="test-comment" style="display: none;">
+  <div class="comment-container">
+    <div class="user-block">
+      <div class="username">You!</div>
+      <div class="time">Seconds from now</div>
+
+      <div class="user-information" style="background: url(/img/noavatar.gif);">
+      <ul>
+        <li>&nbsp;</li>
+        <li>&nbsp;</li>
+      </ul>
+    </div>
+  </div>
+  <div class="content-block">
+    <div class="content"></div>
+  </div>
+  <div style="clear: both;"></div>
+</div>
+
+
 </div>
 <script src="/js/thread.js"></script>

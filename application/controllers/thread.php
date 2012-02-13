@@ -6,15 +6,18 @@ class Thread extends Controller {
   {
     parent::Controller();
 
-    $this->load->helper(array('url', 'date', 'form', 'content_render', 'htmlpurifier'));
+    $this->load->helper(array('url', 'date', 'form', 'content_render',
+                              'htmlpurifier'));
     $this->load->library(array('form_validation', 'pagination'));
     $this->load->model('thread_dal');
 
     // set all this so we dont have to continually call functions through session
     $this->meta = array(
-			'user_id' => (int) $this->session->userdata('user_id'),
-			'comments_shown' => $this->session->userdata('comments_shown') == false ? 50 : (int)$this->session->userdata('comments_shown')
-                        );
+      'user_id' => (int) $this->session->userdata('user_id'),
+      'session_id' => $this->session->userdata('session_id'),
+      'hide_enemy_posts' => $this->session->userdata('hide_enemy_posts'),
+      'comments_shown' => (int) $this->session->userdata('comments_shown') ?: 50,
+    );
   }
 
   // if the just throw in /thread into the address bar
@@ -28,12 +31,12 @@ class Thread extends Controller {
   {
     // if they roll in with something unexpected
     // send them home
-    if (!is_numeric($thread_id)) {
+    if (!is_numeric($thread_id))
       redirect('/');
-    }
 
     // grabbing the thread information
-    $query = $this->thread_dal->get_thread_information($this->meta['user_id'], $thread_id);
+    $query = $this->thread_dal->get_thread_information($this->meta['user_id'],
+                                                       $thread_id);
 
     // does it exist?
     if ($query->num_rows === 0)
@@ -41,18 +44,29 @@ class Thread extends Controller {
 
     $thread_info = $query->row();
 
+    $hidden = explode(',',
+                      $this->thread_dal->get_hidden($this->meta['user_id']));
+
+    $favourites = explode(',',
+                          $this->thread_dal->get_favorites($this->meta['user_id']));
+
     // alright we're clear, set some data for the view
     $data = array(
-                  'info' => array(
-                                  'title' => $thread_info->subject,
-                                  'nsfw' => $thread_info->nsfw,
-                                  'closed' => $thread_info->closed,
-                                  'category' => $thread_info->category,
-                                  'acq_type' => (int) $thread_info->type
-                                  ),
-                  'thread_id' => $thread_id,
-                  'favorites' => explode(',', $this->thread_dal->get_favorites($this->meta['user_id']))
-                  );
+      'info' => array(
+         'title' => $thread_info->subject,
+         'nsfw' => $thread_info->nsfw,
+         'closed' => $thread_info->closed,
+         'category' => $thread_info->category,
+         'acq_type' => (int) $thread_info->type,
+         'user_id' => $thread_info->user_id,
+         'editable' => time() - strtotime($thread_info->created) < 300
+       ),
+      'thread_id' => $thread_id,
+      'favorites' => $favourites,
+      'hidden' => $hidden,
+      'meta' => $this->meta
+    );
+
 
     // if the thread is closed then we're not accepting any new data
     if ($thread_info->closed === '0' || (int) $thread_info->type == 2) {
@@ -60,21 +74,41 @@ class Thread extends Controller {
       // if they're submitting data, we're going to refresh the page anyways
       // so theres no point in running the query below the form validation
       $this->form_validation->set_rules('content', 'Content', 'required');
+      $this->form_validation->set_rules('ajax', 'ajax');
 
       // if a comment was submitted
       if ($this->form_validation->run()) {
-        $content = _ready_for_save($this->form_validation->set_value('content'));
+
+        $content = $this->form_validation->set_value('content');
+        $ajax = $this->form_validation->set_value('ajax');
 
         $this->thread_dal->new_comment(array(
           'thread_id' => $thread_id,
           'user_id' => $this->meta['user_id'],
-          'content' => $content
+          'content' => _process_post($content),
+          'original_content' => $content
         ));
-        redirect(uri_string() . '#bottom');
+
+        $this->user_dal->update_comment_count($this->meta['user_id']);
+
+        $db_count = $this->thread_dal->comment_count($thread_id);
+        $shown = $this->meta['comments_shown'];
+        if (!$shown) {
+          $shown = 25;
+        }
+        $count = (ceil($db_count / $shown) -1) * $shown;
+
+        $url = '/thread/'. $thread_id . '/'.
+          url_title($thread_info->subject, 'dash', TRUE) . '/p/'. $count . '/' .
+          $db_count . '#bottom';
+
+        if ($ajax) {
+          return send_json($this->output, 201, array('ok' => true, 'url' =>  $url));
+        } else {
+          redirect($url);
+        }
       }
     }
-
-    $display = $this->session->userdata('comments_shown') == false ? 50 : (int)$this->session->userdata('comments_shown');
 
     $pseg = 0;
     $base_url = '';
@@ -94,30 +128,42 @@ class Thread extends Controller {
       }
     }
 
-    if ($pseg === 0) {
+    if ($pseg === 0)
       $base_url .= '/p';
-    }
 
-    $data['comment_result'] = $this->thread_dal->get_comments($this->meta['user_id'],
-                                                              $thread_id, $limit_start, $this->meta['comments_shown']);
+    $data['thread_model'] =& $this->thread_dal;
+
+    $data['comment_result'] =
+      $this->thread_dal->get_comments($this->meta['user_id'],
+                                      $thread_id,
+                                      $limit_start,
+                                      $this->meta['comments_shown']);
 
     $data['total_comments'] = $this->thread_dal->comment_count($thread_id);
 
     $this->pagination->initialize(array(
-			'base_url' => $base_url,
-			'total_rows' => $data['total_comments'],
-			'uri_segment' => $pseg,
-			'per_page' => $this->meta['comments_shown'],
-			'full_tag_open' => '<div class="main-pagination">',
-			'full_tag_close' => '</div>',
-			'cur_tag_open' => '<div class="selected-page">',
-			'cur_tag_close' => '</div>',
-			'num_tag_open' => '',
-			'num_tag_close' => ''
-                                        ));
+      'num_links' => 1,
+      'base_url' => $base_url,
+      'total_rows' => $data['total_comments'],
+      'uri_segment' => $pseg,
+      'per_page' => $this->meta['comments_shown'],
+      'full_tag_open' => '<div class="main-pagination">',
+      'full_tag_close' => '</div>',
+      'cur_tag_open' => '<div class="selected-page">',
+      'cur_tag_close' => '</div>',
+      'num_tag_open' => '',
+      'num_tag_close' => ''
+    ));
 
-    $end = min(array($limit_start + $this->meta['comments_shown'], $data['total_comments']));
-    $data['pagination'] = $this->pagination->create_links() .'<span class="paging-text">'. ($limit_start + 1) .' - '. $end .' of '. $data['total_comments'] .' Posts in <a href="/">Threads</a> &gt; <a href="/f/'.strtolower($data['info']['category']).'">'.$data['info']['category'].'</a> > <a href="/thread/'. $thread_id.'/'.url_title($data['info']['title'], 'dash', TRUE) .'">'.$data['info']['title'].'</a></span>';
+    $end = min(array($limit_start + $this->meta['comments_shown'],
+                     $data['total_comments']));
+    $data['pagination'] = $this->pagination->create_links() .
+      '<span class="paging-text">'. ($limit_start + 1) .' - '. $end .' of ' .
+      $data['total_comments'] .' Posts in <a href="/">Threads</a> &gt; ' .
+      '<a href="/f/'.strtolower($data['info']['category']).'">' .
+      $data['info']['category'].'</a> > <a href="/thread/'. $thread_id.'/' .
+      url_title($data['info']['title'], 'dash', TRUE) .'">' .
+      $data['info']['title'].'</a></span>';
 
     $data['starting'] = $limit_start;
 

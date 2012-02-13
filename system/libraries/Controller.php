@@ -37,12 +37,57 @@ class Controller extends CI_Base {
    *
    * Calls the initialize() function
    */
-  function Controller()
-  {
-    parent::CI_Base();
-    $this->_ci_initialize();
-    log_message('debug', "Controller Class Initialized");
-  }
+	function Controller()
+	{
+		parent::CI_Base();
+		$this->_ci_initialize();
+		log_message('debug', "Controller Class Initialized");
+	}
+
+	/**
+	 * Initialize
+	 *
+	 * Assigns all the bases classes loaded by the front controller to
+	 * variables in this class.  Also calls the autoload routine.
+	 *
+	 * @access	private
+	 * @return	void
+	 */
+	 /*
+	function _ci_initialize()
+	{
+		// Assign all the class objects that were instantiated by the
+		// front controller to local class variables so that CI can be
+		// run as one big super object.
+		$classes = array(
+							'config'	=> 'Config',
+							'input'		=> 'Input',
+							'benchmark'	=> 'Benchmark',
+							'uri'		=> 'URI',
+							'output'	=> 'Output',
+							'lang'		=> 'Language',
+							'router'	=> 'Router'
+							);
+		
+		foreach ($classes as $var => $class)
+		{
+			$this->$var =& load_class($class);
+		}
+		
+		$this->load =& load_class('Loader');
+		$this->load->_ci_autoloader();
+		
+		// redirect to login if they arent currently logged in
+		
+		if (!$this->sauth->is_logged_in())
+		{
+			if ((!isset($this->uri->segments[1]) || $this->uri->segments[1] != 'beta'))
+			{
+				$this->load->helper(array('url'));
+				redirect('/beta/');
+			}
+		}
+	}*/
 
   // --------------------------------------------------------------------
 
@@ -72,7 +117,6 @@ class Controller extends CI_Base {
     foreach ($classes as $var => $class) {
       $this->$var =& load_class($class);
     }
-
     $this->load =& load_class('Loader');
     $this->load->_ci_autoloader();
 

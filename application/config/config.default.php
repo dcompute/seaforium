@@ -1,24 +1,47 @@
 <?php  if ( ! defined('BASEPATH')) exit('No direct script access allowed');
 
-// these are needed to login to yay for registration
-$config['yay_username'] = '';
-$config['yay_password'] = '';
-
 /*
-|--------------------------------------------------------------------------
-| Base Site URL
-|--------------------------------------------------------------------------
-|
 | URL to your CodeIgniter root. Typically this will be your base URL,
 | WITH a trailing slash:
 |
 |	http://example.com/
 |
-| If this is not set then CodeIgniter will guess the protocol, domain and
-| path to your installation.
-|
 */
-$config['base_url']	= '';
+$config['base_url']	= '%HOST%';
+
+// a hand written :( verion to cache bust static files when we update
+$version = '0';
+
+// these are needed to send forgot password emails
+$config['sendgrid_username'] = '';
+$config['sendgrid_password'] = '';
+
+//name of site
+$config['site_name'] = 'YayHooray';
+
+// Require captchas during registration
+$config['use_captcha'] = FALSE;
+
+//name for emails and admin email address
+$config['email_signature'] = 'YayHooray.net';
+$config['email_addy'] = 'dale@arandomurl.com';
+
+//base url for the PM notices an email links
+//WITH a trailing slash
+$config['base_url_pm'] = 'http://yayhooray.net/';
+
+$config['recaptcha'] = array(
+  'public' => '',
+  'private' => '',
+  'RECAPTCHA_API_SERVER' => 'http://www.google.com/recaptcha/api',
+  'RECAPTCHA_API_SECURE_SERVER' => 'https://www.google.com/recaptcha/api',
+  'RECAPTCHA_VERIFY_SERVER' => 'www.google.com',
+  'RECAPTCHA_SIGNUP_URL' => 'https://www.google.com/recaptcha/admin/create',
+  'theme' => 'red'
+);
+
+//Flickr API details
+$config['flickr_key'] = '';
 
 /*
 |--------------------------------------------------------------------------

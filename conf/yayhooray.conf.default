@@ -1,0 +1,47 @@
+NameVirtualHost *:80
+
+<VirtualHost *:80>
+
+  ServerName www.%HOST%
+  Redirect 301 / http://%HOST%/
+
+  ServerAdmin webmaster@localhost
+  DocumentRoot %ROOT_PATH%
+
+  <Directory />
+    Options FollowSymLinks
+    AllowOverride None
+  </Directory>
+
+  <Directory %ROOT_PATH%>
+    Options Indexes FollowSymLinks MultiViews
+    AllowOverride AuthConfig FileInfo
+    Order allow,deny
+    Allow from all
+  </Directory>
+
+</VirtualHost>
+
+<VirtualHost *:80>
+
+  ServerName %HOST%
+  ServerAdmin webmaster@localhost
+  DocumentRoot %ROOT_PATH%
+
+  <Directory />
+    Options FollowSymLinks
+    AllowOverride None
+  </Directory>
+
+  <Directory %ROOT_PATH%>
+    Options Indexes FollowSymLinks MultiViews
+    AllowOverride AuthConfig FileInfo
+    Order allow,deny
+    Allow from all
+  </Directory>
+
+  ErrorLog /var/log/apache2/error.log
+  LogLevel warn
+  CustomLog /var/log/apache2/access.log combined
+
+</VirtualHost>

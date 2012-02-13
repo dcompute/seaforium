@@ -1,0 +1,8 @@
+[db]
+host = %MYSQL_HOST%
+username = %MYSQL_USER%
+password = %MYSQL_PASS%
+database = forum
+
+[site]
+url = http://%HOST/

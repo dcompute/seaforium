@@ -34,16 +34,20 @@ class Ajax extends Controller
     }
 
     // find out how many comments are in the thread
-    $db_count = $this->thread_dal->comment_count($thread_id);
+    $thread_info = $this->thread_dal->comment_count_info($thread_id);
+    $db_count = $thread_info->max_rows;
 
     // if the numbers dont match, throw out some html
     if ($db_count > $current_count) {
 
       // number of new posts
       $new_posts = $db_count - $current_count;
-      $title = url_title($this->thread_dal->get_thread_information($this->session->userdata('user_id'), $thread_id)->row()->subject, 'dash', TRUE);
+      $title = url_title($thread_info->subject, 'dash', TRUE);
       $shown = $this->session->userdata('comments_shown');
-      $count = ceil($db_count / $shown);
+      if (!$shown) {
+        $shown = 25;
+      }
+      $count = (ceil($db_count / $shown) -1) * $shown;
 
       echo '<div id="notifier"><a id="notify" href="/thread/'. $thread_id .
         '/'. $title . '/p/'. $count .'/r'. mt_rand(10000, 99999) .'#bottom">' .
@@ -73,7 +77,7 @@ class Ajax extends Controller
 
     $data = array(
       'content' => $display === 0 ? $comment->content : nl2br($comment->content),
-      'owner' => ($comment->user_id == $this->session->userdata('user_id') &&
+      'owner' => ($comment->user_id == $this->user_id &&
                   strtotime($comment->created) > (time() - 3600))
     );
 
@@ -88,11 +92,12 @@ class Ajax extends Controller
     }
 
     $comment = $this->thread_dal->get_comment($comment_id)->row();
-
+    $is_first = $this->thread_dal->is_first_comment($comment->thread_id,
+                                                    $comment_id);
     $data = array(
-      'content' => _ready_for_source($comment->content),
-      'owner' => ($comment->user_id == $this->session->userdata('user_id') &&
-                  strtotime($comment->created) > (time() - (60*60*24)))
+      'content' => $comment->original_content,
+      'owner' => ($comment->user_id == $this->user_id &&
+         ($is_first || strtotime($comment->created) > (time() - (60*60*24))))
     );
 
     echo '('. json_encode($data) .')';
@@ -110,12 +115,18 @@ class Ajax extends Controller
 
     $existing = $this->thread_dal->get_comment($comment_id)->row();
 
-    if ($existing->user_id === $this->session->userdata('user_id')) {
-      $content = _ready_for_save($this->input->post('content'));
+    if ((int)$existing->user_id === $this->user_id) {
 
-      if ($this->thread_dal->update_comment($comment_id, $content,
-                                            $this->session->userdata('user_id'))) {
-        echo _ready_for_display($content);
+      $content = $this->input->post('content');
+      $processed = _process_post($content);
+
+      if ((strtotime($existing->created) > time() - (60 * 60 * 24)) ||
+          $this->thread_dal->is_first_comment($existing->thread_id, $comment_id)) {
+		    $this->thread_dal->update_comment($comment_id, $content, $processed,
+                                              $this->session->userdata('user_id'));
+            echo $processed;
+      } else {
+        echo "Permission Denied";
       }
     }
 
@@ -127,12 +138,14 @@ class Ajax extends Controller
     if ($key === $this->session->userdata('session_id')) {
       $thread_id = (int) $thread_id;
       $status = (int) $status;
-      $user_id = (int) $this->session->userdata('user_id');
+      $user_id = (int) $this->user_id;
 
       if ($keyword == 'nsfw') {
         echo $this->thread_dal->change_nsfw($user_id, $thread_id, $status);
       } elseif ($keyword == 'closed') {
         echo $this->thread_dal->change_closed($user_id, $thread_id, $status);
+      } elseif ($keyword == 'deleted') {
+        echo $this->thread_dal->change_deleted($user_id, $thread_id, $status);
       }
     }
   }
@@ -141,7 +154,7 @@ class Ajax extends Controller
   {
     if ($key === $this->session->userdata('session_id')) {
       $thread_id = (int) $thread_id;
-      $user_id = (int) $this->session->userdata('user_id');
+      $user_id = (int) $this->user_id;
 
       $md5 = md5($this->session->userdata('username').$thread_id);
 
@@ -163,11 +176,50 @@ class Ajax extends Controller
     echo 0;
   }
 
+  function hide_thread($thread_id, $key)
+  {
+    if ($key == $this->session->userdata('session_id'))
+	{
+      $thread_id = (int) $thread_id;
+      $user_id = (int) $this->user_id;
+
+	  $data = $this->session->userdata('username') . $thread_id;
+	  echo $this->thread_dal->add_hide_thread(md5($data), $user_id, $thread_id);
+	  return;
+	}
+
+	echo 0;
+  }
+
+  function unhide_thread($thread_id, $key)
+  {
+    if ($key == $this->session->userdata('session_id'))
+	{
+	  $data = $this->session->userdata('username') . $thread_id;
+	  echo $this->thread_dal->remove_hide_thread(md5($data));
+	  return;
+	}
+
+	echo 0;
+  }
+  
+  function hide_ads($key)
+  {
+    if ($key == $this->session->userdata('session_id'))
+      echo $this->user_dal->hide_ads($this->session->userdata('user_id'));
+  }
+  
+  function show_ads($key)
+  {
+    if ($key == $this->session->userdata('session_id'))
+      echo $this->user_dal->show_ads($this->session->userdata('user_id'));
+  }
+  
   function toggle_html($key)
   {
     if ($key === $this->session->userdata('session_id')) {
       $view_html = (int) $this->session->userdata('view_html');
-      $user_id = $this->session->userdata('user_id');
+      $user_id = $this->user_id;
       $results = $this->user_dal->toggle_html((int) $user_id, $view_html);
 
       if ($results === 1) {
@@ -180,6 +232,12 @@ class Ajax extends Controller
       }
     }
   }
+
+  function preview()
+  {
+    echo _process_post($this->input->post('content'));
+  }
+
 }
 
 /* End of file ajax.php */

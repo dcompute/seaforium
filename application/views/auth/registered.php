@@ -1,0 +1,1 @@
+<div id="main-title"><h3>OMG, you can Register?</h3></div>

@@ -7,6 +7,21 @@ class User_dal extends Model
     parent::__construct();
   }
 
+	function insert_ip_address($user_id, $ip_address)
+	{
+		$sql = "
+			INSERT IGNORE INTO
+			ip_addresses (
+			address_id,
+			user_id,
+			ip_address
+			) VALUES (
+			?, ?, ?
+			)";
+		
+		return $this->db->query($sql, array(md5($user_id.$ip_address), (int)$user_id, $ip_address));
+	}
+	
   /**
    * Get user record by Id
    *
@@ -24,7 +39,7 @@ class User_dal extends Model
 
     return NULL;
   }
-
+	
   /**
    * Get user record by username
    *
@@ -41,6 +56,32 @@ class User_dal extends Model
     }
 
     return NULL;
+  }
+
+  function hide_ads($user_id)
+  {
+    $query = $this->db->query("UPDATE users SET hide_ads = '1' WHERE id = ?", $user_id);
+    
+    if ($this->db->affected_rows() === 1)
+    {
+      $this->session->set_userdata(array('hide_ads' => 1));
+      return 1;
+    } else {
+      return 0;
+    }
+  }
+
+  function show_ads($user_id)
+  {
+    $query = $this->db->query("UPDATE users SET hide_ads = '0' WHERE id = ?", $user_id);
+    
+    if ($this->db->affected_rows() === 1)
+    {
+      $this->session->set_userdata(array('hide_ads' => 0));
+      return 1;
+    } else {
+      return 0;
+    }
   }
 
   /**
@@ -61,6 +102,38 @@ class User_dal extends Model
     return NULL;
   }
 
+  function create_yh_invite($username, $invite_id)
+  {
+    $data = array($invite_id, $username, date("Y-m-d H:i:s", utc_time()));
+    $this->db->query("INSERT INTO yh_invites (invite_id, yh_username, created) " .
+                     "VALUES (?, ?, ?)", $data);
+    return TRUE;
+  }
+
+  /**
+   * Check if yh invite is used
+   *
+   * @param  string
+   * @return  bool
+   */
+  function is_yh_invite_used($key)
+  {
+    $query = $this->db->query("SELECT 1 FROM yh_invites WHERE invite_id = ? AND used = 0", $key);
+
+    return $query->num_rows() == 0;
+  }
+
+  function get_username_from_authkey($authkey)
+  {
+    $query = $this->db->query("SELECT yh_username FROM yh_invites WHERE invite_id=?",
+                              $authkey);
+
+    if ($query->num_rows() === 1) {
+      return $query->row()->yh_username;
+    }
+
+    return FALSE;
+  }
   /**
    * Get user record by username
    *
@@ -80,15 +153,94 @@ class User_dal extends Model
   }
 
 
-  function get_users()
+  function get_users_count($username_search_string='')
   {
-    return $this->db->query("SELECT username, created, last_login FROM users;")->result_array();
+    $count = (int)$this->db->query('SELECT count(username) AS ' .
+                                   'max_rows FROM users'.$username_search_string.';')->row()->max_rows;
+    return $count > 0 ? $count : '0';
+  }
+
+  function get_acquaintance_count($username, $type)
+  {
+    return
+      (int)$this->db->query("SELECT
+      count(users.username) AS count
+      FROM users
+      LEFT JOIN acquaintances ON users.id = acquaintances.user_id
+      LEFT JOIN sessions ON sessions.user_id = users.id
+      WHERE acquaintances.acq_user_id = (SELECT id FROM users WHERE username = ?)
+      AND acquaintances.type = ?", array($username, $type))->row()->count;
+  }
+
+  function get_users($username_search_string='',$limit, $span, $my_user_id=0)
+  {
+    $sql = "SELECT
+              users.username AS username,
+              users.created AS created,
+              users.last_login AS last_login,
+              users.threads_count AS threads_count,
+              users.comments_count AS comments_count,
+              IFNULL(sessions.last_activity, 0) AS latest_activity,
+              (
+                SELECT count(acquaintances.user_id)
+                FROM acquaintances
+                WHERE acquaintances.acq_user_id = users.id
+                AND acquaintances.type = 1
+				AND acquaintances.user_id = ".$my_user_id."
+              ) AS buddy_check,
+              (
+                SELECT count(acquaintances.user_id)
+                FROM acquaintances
+                WHERE acquaintances.acq_user_id = users.id
+                AND acquaintances.type = 2
+				AND acquaintances.user_id = ".$my_user_id."
+              ) AS enemy_check
+            FROM users
+            LEFT JOIN sessions ON sessions.user_id = users.id" .
+            $username_search_string .
+            " GROUP BY users.id
+            ORDER BY LOWER(username) ASC
+            LIMIT ".(int)$limit.", ".(int)$span.";";
+
+    return $this->db->query($sql)->result_array();
+  }
+
+  function get_acquaintance_information($username, $type, $pagination, $display)
+  {
+    $sql = 'SELECT
+            users.username AS username,
+            users.created AS created,
+            users.last_login AS last_login,
+            users.comments_count AS comments_count,
+            users.threads_count AS threads_count,
+            IFNULL(sessions.last_activity, 0) AS latest_activity
+            FROM users
+            LEFT JOIN acquaintances ON users.id = acquaintances.user_id
+            LEFT JOIN sessions ON sessions.user_id = users.id
+            WHERE acquaintances.acq_user_id = (SELECT id FROM users WHERE username = ?)
+            AND acquaintances.type = ?
+            GROUP BY username
+            ORDER BY LOWER(username)
+            LIMIT ?, ?';
+
+    return $this->db->query($sql, array($username, $type, $pagination, $display))->result_array();
+  }
+
+  function update_thread_count($user_id)
+  {
+    $sql = "UPDATE users SET threads_count = threads_count+1 WHERE id = ?";
+    return $this->db->query($sql, $user_id);
+  }
+
+  function update_comment_count($user_id)
+  {
+    $sql = "UPDATE users SET comments_count = comments_count+1 WHERE id = ?";
+    return $this->db->query($sql, $user_id);
   }
 
 
   function get_user_ids_from_array($user_id, $usernames)
   {
-
     $usernames = array_map('strtolower', $usernames);
     $usernames = array_map('trim', $usernames);
 
@@ -103,36 +255,6 @@ class User_dal extends Model
 	    WHERE LOWER(username) IN ('". implode("','",$usernames) ."');";
 
     return $this->db->query($sql, $user_id);
-  }
-
-  function get_username_from_authkey($authkey)
-  {
-    $query = $this->db->query("SELECT yh_username FROM yh_invites WHERE invite_id=?",
-                              $authkey);
-
-    if ($query->num_rows() === 1) {
-      return $query->row()->yh_username;
-    }
-
-    return FALSE;
-  }
-
-  /**
-   * Get yh username by invite id
-   *
-   * @param	string
-   * @return	object
-   */
-  function get_yh_username_by_invite($invite_id)
-  {
-    $query = $this->db->query("SELECT yh_username FROM yh_invites WHERE invite_id=?",
-                              $invite_id);
-
-    if ($query->num_rows() == 1) {
-      return $query->row()->yh_username;
-    }
-
-    return NULL;
   }
 
   /**
@@ -170,64 +292,6 @@ class User_dal extends Model
     $query = $this->db->query("SELECT 1 FROM users WHERE LOWER(email) = ?",
                               strtolower($email));
     return $query->num_rows() == 0;
-  }
-
-  /**
-   * Check if yh username available for inviting
-   *
-   * @param	string
-   * @return	bool
-   */
-  function is_yh_username_available($username)
-  {
-    $query = $this->db->query("SELECT 1 FROM yh_invites WHERE LOWER(yh_username) = ?",
-                              strtolower($username));
-
-    return $query->num_rows() == 0;
-  }
-
-  /**
-   * Check if yh invite is used
-   *
-   * @param	string
-   * @return	bool
-   */
-  function is_yh_invite_used($key)
-  {
-    $query = $this->db->query("SELECT 1 FROM yh_invites WHERE invite_id = ? AND used = 0", $key);
-
-    return $query->num_rows() == 0;
-  }
-
-  /**
-   * Create new invite for yh user
-   *
-   * @param	string
-   * @param	string
-   * @return	bool
-   */
-  function create_yh_invite($username, $invite_id)
-  {
-    $data = array($invite_id, $username, date("Y-m-d H:i:s", utc_time()));
-    $this->db->query("INSERT INTO yh_invites (invite_id, yh_username, created) " .
-                     "VALUES (?, ?, ?)", $data);
-    return TRUE;
-  }
-
-  /**
-   * Get the whitelist from the database
-   *
-   * @return	array
-   */
-  function get_yh_whitelist()
-  {
-    $list = array();
-
-    foreach($this->db->query("SELECT * FROM yh_whitelist")->result() as $row) {
-      $list[] = strtolower($row->username);
-    }
-
-    return $list;
   }
 
   /**
@@ -327,7 +391,6 @@ class User_dal extends Model
     $sql = "
 			UPDATE users
 			SET
-				new_password_key = NULL,
 				last_ip = ?,
 				last_login = ?
 			WHERE id = ?";
@@ -341,10 +404,8 @@ class User_dal extends Model
    * @param	string
    * @return	object
    */
-  function get_profile_information($user_id)
+  function get_profile_information($username, $user_id)
   {
-    $ident = !is_numeric($user_id) ? 'username' : 'id';
-
     $sql = "
 			SELECT
 				users.id,
@@ -354,8 +415,9 @@ class User_dal extends Model
 				users.email,
 				users.new_post_notification,
 				users.random_titles,
+				users.custom_css,
+				users.custom_js,
 				users.timezone,
-				users.invited_by,
 				user_profiles.country,
 				user_profiles.website_1,
 				user_profiles.website_2,
@@ -365,27 +427,95 @@ class User_dal extends Model
 				user_profiles.gchat,
 				user_profiles.facebook,
 				user_profiles.lastfm,
+				user_profiles.twitter,
 				user_profiles.about_blurb,
 				user_profiles.flickr_username,
 				user_profiles.delicious_username,
 				user_profiles.rss_feed_1,
 				user_profiles.rss_feed_2,
 				user_profiles.rss_feed_3,
-				user_profiles.custom_css,
 				user_profiles.name,
 				user_profiles.location,
 				users.comments_shown,
-				count(DISTINCT comments.comment_id) AS comment_count,
-				count(DISTINCT threads.thread_id) AS thread_count
+				users.threads_count AS threads_count,
+				users.comments_count AS comments_count,
+				IFNULL(sessions.last_activity, 0) AS latest_activity,
+              (
+                SELECT count(acquaintances.user_id)
+                FROM acquaintances
+                WHERE acquaintances.acq_user_id = users.id
+                AND acquaintances.type = 1
+				AND acquaintances.user_id = ?
+              ) AS buddy_check,
+             (
+                SELECT count(acquaintances.user_id)
+                FROM acquaintances
+                WHERE acquaintances.acq_user_id = users.id
+                AND acquaintances.type = 2
+				AND acquaintances.user_id = ?
+              ) AS enemy_check
 			FROM users
 			LEFT JOIN user_profiles ON user_profiles.user_id = users.id
-			LEFT JOIN comments ON comments.user_id = users.id
-			LEFT JOIN threads ON threads.user_id = users.id
-			WHERE users.". $ident ." = ?";
+			LEFT JOIN sessions ON sessions.user_id = users.id
+			WHERE LOWER(users.username) = ?
+			GROUP BY users.id";
+
+    return $this->db->query($sql, array($user_id, $user_id, strtolower($username)));
+
+  }
+
+  /**
+   * Pretty self-explanatory
+   *
+   * @param	string
+   * @return	object
+   */
+  function get_profile_information_by_id($user_id)
+  {
+    $sql = "
+			SELECT
+				users.id,
+				users.username,
+				users.created,
+				users.last_login,
+				users.email,
+				users.new_post_notification,
+				users.hide_enemy_posts,
+				users.random_titles,
+				users.custom_css,
+				users.custom_js,
+				users.chat_fixed_size,
+				users.timezone,
+				user_profiles.country,
+				user_profiles.website_1,
+				user_profiles.website_2,
+				user_profiles.website_3,
+				user_profiles.aim,
+				user_profiles.msn,
+				user_profiles.gchat,
+				user_profiles.facebook,
+				user_profiles.lastfm,
+				user_profiles.twitter,
+				user_profiles.about_blurb,
+				user_profiles.flickr_username,
+				user_profiles.delicious_username,
+				user_profiles.rss_feed_1,
+				user_profiles.rss_feed_2,
+				user_profiles.rss_feed_3,
+				user_profiles.name,
+				user_profiles.location,
+				users.comments_shown,
+				users.threads_shown,
+				users.threads_count AS threads_count,
+				users.comments_count AS comments_count
+			FROM users
+			LEFT JOIN user_profiles ON user_profiles.user_id = users.id
+			WHERE users.id = ?";
 
     return $this->db->query($sql, $user_id);
 
   }
+
   /**
    * Pretty self-explanatory get user recent posts. also concactenate a link in sql
    *
@@ -409,7 +539,9 @@ class User_dal extends Model
 			LEFT JOIN threads
 				ON comments.thread_id = threads.thread_id
 			WHERE comments.user_id = ?
-				AND deleted != 0
+				AND comments.deleted != '1'
+				AND threads.deleted != 1
+				AND threads.nsfw != 1
 			ORDER BY comment_id DESC
 			LIMIT 10";
 
@@ -435,20 +567,17 @@ class User_dal extends Model
    */
   function get_active_users($user_id)
   {
-    $sql = "
-			SELECT
-				DISTINCT users.username
-			FROM users
-			RIGHT JOIN acquaintances
-			ON acquaintances.acq_user_id = users.id
-			LEFT JOIN sessions
-			ON sessions.user_id = users.id
-			WHERE acquaintances.user_id = ?
-			AND sessions.user_id != 0
-			AND sessions.last_activity > (UNIX_TIMESTAMP() - 300)
-			AND acquaintances.type = 1";
+    $sql = "SELECT DISTINCT users.username
+	    FROM users
+	    RIGHT JOIN acquaintances
+	      ON acquaintances.acq_user_id = users.id
+	      AND acquaintances.type = 1
+              AND acquaintances.user_id = ?
+	    INNER JOIN sessions
+	      ON sessions.user_id = users.id
+	    ORDER BY users.username ASC";
 
-    $data['buddies'] = $this->db->query($sql, $user_id);
+    $data['buddies'] = $this->db->query($sql, (int)$user_id);
 
     $sql = "
 			SELECT count(users.id) AS buddy_count
@@ -471,17 +600,25 @@ class User_dal extends Model
     return $this->db->affected_rows() === 1;
   }
 
-  function acquaintance_exists($user_id, $acq_id)
+  function acquaintance_exists($key)
   {
-    $data = array($user_id, $acq_id);
-    $result = $this->db->query("SELECT user_id FROM acquaintances WHERE user_id = ? AND acq_user_id = ?", $data);
-
-    return $result->num_rows > 0;
+    $sql = "SELECT type FROM acquaintances WHERE acq_id = ?";
+    $result = $this->db->query($sql, $key)->row();
+    return (count($result) > 1) ? (int) $result->type : 0;
   }
 
   function delete_acquaintance($key)
   {
     $this->db->query("DELETE FROM acquaintances WHERE acq_id = ?", $key);
+    return $this->db->affected_rows();
+  }
+
+  function move_acquaintance($to_list, $key)
+  {
+    $this->db->query("UPDATE acquaintances SET type = ? WHERE acq_id = ?", array($to_list, $key));
+
+
+
     return $this->db->affected_rows();
   }
 
@@ -499,7 +636,8 @@ class User_dal extends Model
 			ON sessions.user_id = users.id
 			WHERE acquaintances.user_id = ?
 			AND acquaintances.type = 1
-			GROUP BY users.id", $user_id);
+			GROUP BY users.id
+			ORDER BY LOWER(users.username) ASC", $user_id);
 
     return $result->num_rows > 0 ? $result : FALSE;
   }
@@ -532,7 +670,8 @@ class User_dal extends Model
 			ON sessions.user_id = users.id
 			WHERE acquaintances.user_id = ?
 			AND acquaintances.type = 2
-			GROUP BY users.id", $user_id);
+			GROUP BY users.id
+			ORDER BY LOWER(users.username) ASC", $user_id);
 
     return $result->num_rows > 0 ? $result : FALSE;
   }
@@ -548,7 +687,7 @@ class User_dal extends Model
 			AND acquaintances.type = 2";
 
     $data['enemy_count'] = $this->db->query($sql, $user_id)->row()->enemy_count;
-	return $data['enemy_count'];
+    return $data['enemy_count'];
   }
 
   function toggle_html($user_id, $view_html)

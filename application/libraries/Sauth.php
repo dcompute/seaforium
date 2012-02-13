@@ -14,6 +14,8 @@ class Sauth
     $this->ci->load->database();
     $this->ci->load->model('user_dal');
 
+    $this->ci->user_id = NULL;
+
     // try to autologin
     $this->autologin();
   }
@@ -55,15 +57,22 @@ class Sauth
       'username' => $user->username,
       'status' => ($user->activated == 1) ? 1 : 0,
       'threads_shown' => $user->threads_shown,
+      'hide_enemy_posts' => $user->hide_enemy_posts,
       'comments_shown' => $user->comments_shown,
       'view_html' => $user->view_html,
       'new_post_notification' => $user->new_post_notification,
       'random_titles' => $user->random_titles,
-      'emoticon' => $user->emoticon
+      'emoticon' => $user->emoticon,
+      'hide_ads' => $user->hide_ads,
+      'chat_fixed_size' => $user->chat_fixed_size
     );
 
     $this->ci->session->set_userdata($data);
+    $this->ci->user_id = (int)$user->id;
+
     $this->create_autologin($user->id);
+
+		$this->ci->user_dal->insert_ip_address($user->id, $this->ci->input->ip_address());
 
     $this->clear_login_attempts($username);
 
@@ -73,7 +82,6 @@ class Sauth
 
     return TRUE;
   }
-
 
   /**
    * Logout user from the site
@@ -111,26 +119,13 @@ class Sauth
    */
   function create_user($username, $email, $password)
   {
-    if ((strlen($username) > 0) AND
-        !$this->ci->user_dal->is_username_available($username)) {
-      $this->error = 'That username is already in use';
-      return false;
-    }
-
-    if (!$this->ci->user_dal->is_email_available($email)) {
-      $this->error = 'That email address is already in use';
-      return FALSE;
-    }
-
-    $is_yay_name = $this->ci->user_dal->is_yay_username($username);
-
     $hasher = new PasswordHash(8, FALSE);
     $user = array(
       'username' => $username,
       'password' => $hasher->HashPassword($password),
       'email' => $email,
       'last_ip' => $this->ci->input->ip_address(),
-      'activated' => $is_yay_name ? 0 : 1
+      'activated' => 1
     );
 
     // insert the user into the database
@@ -242,7 +237,9 @@ class Sauth
   {
     // not logged in (as any user)
     if (!$this->is_logged_in() AND !$this->is_logged_in(FALSE)) {
+
       $this->ci->load->helper('cookie');
+
       if ($cookie = get_cookie('autologin', TRUE)) {
 
         $data = unserialize($cookie);
@@ -250,28 +247,35 @@ class Sauth
         if (isset($data['key']) AND isset($data['user_id'])) {
 
           $this->ci->load->model('auth/user_autologin');
-          $user = $this->ci->user_autologin->get($data['user_id'],md5($data['key']));
-          if (!is_null($user)) {
+          $user = $this->ci->user_dal->get_user_by_id($data['user_id']);
 
-            // Login user
-            $this->ci->session->set_userdata(array(
+          if ($user) {
+            $data = array(
               'user_id' => $user->id,
               'username' => $user->username,
-              'status'	=> 1,
-            ));
+              'status' => ($user->activated == 1) ? 1 : 0,
+              'threads_shown' => $user->threads_shown,
+              'hide_enemy_posts' => $user->hide_enemy_posts,
+              'comments_shown' => $user->comments_shown,
+              'view_html' => $user->view_html,
+              'new_post_notification' => $user->new_post_notification,
+              'random_titles' => $user->random_titles,
+              'emoticon' => $user->emoticon,
+              'custom_css' => $user->custom_css
+            );
 
-            // Renew users cookie to prevent it from expiring
-            set_cookie(array(
-              'name' => 'autologin',
-              'value' => $cookie,
-              'expire' => 5356800,
-            ));
+            // This should just be global data, does not need to go through
+            // cookies as it is read on every page request
+            $this->ci->session->set_userdata($data);
+            $this->ci->user_id = (int)$user->id;
 
             $ip = $this->ci->config->item('login_record_ip', 'auth');
             $time = $this->ci->config->item('login_record_time', 'auth');
             $this->ci->user_dal->update_login_info($user->id, $ip, $time);
             return TRUE;
           }
+        } else {
+          return FALSE;
         }
       }
     }
